@@ -212,8 +212,16 @@ func (r *Request) PrintRequest() {
 	fmt.Printf("- Method: %s\n", r.RequestLine.Method)
 	fmt.Printf("- Target: %s\n", r.RequestLine.RequestTarget)
 	fmt.Printf("- Version: %s\n", r.RequestLine.HttpVersion)
+	if len(r.Headers) == 0 {
+		return
+	}
 	fmt.Println("Headers:")
 	for key, val := range r.Headers {
 		fmt.Printf("- %s: %v\n", key, val)
 	}
+	if len(r.Body) == 0 {
+		return
+	}
+	fmt.Println("Body:")
+	fmt.Printf("%s\n", string(r.Body))
 }
