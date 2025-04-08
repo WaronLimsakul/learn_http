@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"fmt"
-	"unicode"
 )
 
 type Headers map[string]string
@@ -33,7 +32,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, err
 	}
 	if !validFieldName(key) {
-		return 0, false, fmt.Errorf("invalid field-name: %s", key)
+		return 0, false, fmt.Errorf("invalid field-name: '%s'", key)
 	}
 	key = strings.ToLower(key)
 
@@ -48,7 +47,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 // return trim value o
 func getFieldLinePair(s string) (key, val string, err error) {
-	s = strings.Trim(s, " ")
+	s  = strings.TrimSpace(s)
 	key, val, found := strings.Cut(s, ":")
 	if !found {
 		return "", "", fmt.Errorf("Invalid field line: %s", s)
@@ -58,10 +57,7 @@ func getFieldLinePair(s string) (key, val string, err error) {
 		return "", "", fmt.Errorf("Invalid header name: %s", key)
 	}
 
-	val = strings.TrimLeft(val, " ")
-	if strings.Contains(val, " ") {
-		return "", "", fmt.Errorf("Invalid header value: %s", val)
-	}
+	val = strings.TrimSpace(val)
 
 	return
 }
@@ -71,7 +67,10 @@ func validFieldName(s string) bool {
 		return false
 	}
 	for _, ch := range s {
-		if !(unicode.IsLetter(ch) || unicode.IsDigit(ch) || strings.Contains("!#$%&'*+-.^_`|~", string(ch))) {
+		if !((ch >= 'a' && ch <= 'z') ||
+			(ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') ||
+			strings.Contains("!#$%&'*+-.^_`|~", string(ch)) ) {
 			return false
 		}
 	}

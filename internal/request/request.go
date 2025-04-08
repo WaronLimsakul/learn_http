@@ -5,16 +5,20 @@ import (
 	"io"
 	"fmt"
 	"strings"
+
+	"github.com/WaronLimsakul/learn_http/internal/headers"
 )
 
 type requestState int
 
 const (
 	initialized requestState = iota
+	parsingHeaders
 	done
 )
 type Request struct {
 	RequestLine RequestLine
+	Headers headers.Headers
 	state requestState
 }
 
@@ -28,10 +32,15 @@ type RequestLine struct {
 const crlf = "\r\n"
 
 
+// Loop reading + parsing until the request is done or there are any error
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	const bufferSize = 8
-	buffer, req, readIdx := make([]byte, bufferSize), Request{}, 0
-	req.state = initialized
+	buffer := make([]byte, bufferSize)
+	req := Request {
+		Headers: headers.NewHeaders(),
+		state: initialized,
+	}
+	readIdx := 0
 	for req.state != done {
 		if readIdx >= len(buffer) {
 			newBuff := make([]byte, len(buffer) * 2)
@@ -40,8 +49,12 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 		// read will read until it can't. So don't be scared of lost chunk
 		read, err := reader.Read(buffer[readIdx:])
+		// io.EOF in my implementation means we already read EVERYTHING
+		// and there is NOT EVEN a BYTE to read from.
 		if err == io.EOF {
-			req.state = done
+			if req.state != done {
+				return nil, fmt.Errorf("incomplete request")
+			}
 			break
 		}
 		readIdx += read
@@ -55,30 +68,56 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			newBuff := make([]byte, len(buffer))
 			copy(newBuff, buffer[consumed:])
 			buffer = newBuff
+			// Don't forget to shif the index back, or there will
+			// be a gap of nil in the buffer
+			readIdx -= consumed
 		}
 	}
 	return &req, nil
 }
 
-// should manage data that stream to request and update the states
+// - Manage data that stream to request and update the states
+// - Try to parse as much as possible
 func (r *Request) parse(data []byte) (int, error) {
 	if r.state == done {
 		return 0, fmt.Errorf("error trying to parse data with done request")
 	}
 
-	if r.state != initialized {
-		return 0, fmt.Errorf("error unknown state")
+	totalParsed := 0
+	for r.state != done {
+		bytesParsed, err := r.parseSingle(data[totalParsed:])
+		totalParsed += bytesParsed
+		if err != nil {
+			return totalParsed, err
+		} else if bytesParsed == 0 {
+			break
+		}
 	}
 
-	consumed, requestLine, err := parseRequestLine(data)
-	// if no error, means need more data
-	if consumed == 0 {
-		return 0, err
-	}
+	return totalParsed, nil
+}
 
-	r.RequestLine = *requestLine
-	r.state = done
-	return consumed, nil
+func (r *Request) parseSingle(data []byte) (bytesParsed int, err error) {
+	switch r.state {
+	case initialized:
+		var requestLine *RequestLine
+		bytesParsed, requestLine, err = parseRequestLine(data)
+		if bytesParsed > 0 {
+			r.RequestLine = *requestLine
+			r.state = parsingHeaders
+		}
+	case parsingHeaders:
+		var parsingDone bool
+		bytesParsed, parsingDone, err = r.Headers.Parse(data)
+		if parsingDone {
+			r.state = done
+		}
+	case done:
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("invalid request state: %v", r.state)
+	}
+	return
 }
 
 // return the bytes it consumed, request line ptr, err

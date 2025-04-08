@@ -109,31 +109,31 @@ func TestHeadersParse(t *testing.T) {
 	assert.Equal(t, "*/*", r.Headers["accept"])
 
 	// Test: Empty Header
-	reader := &chunkReader{
+	reader = &chunkReader{
 		data:            "GET / HTTP/1.1\r\n\r\n",
 		numBytesPerRead: 3,
 	}
-	r, err := RequestFromReader(reader)
+	r, err = RequestFromReader(reader)
 	require.NoError(t, err)
 	require.NotNil(t, r)
 
 	// Test: Duplicated Header??
-	reader := &chunkReader{
+	reader = &chunkReader{
 		data:            "GET / HTTP/1.1\r\nAccept: application/json\r\n Accept: text/html\r\n\r\n",
 		numBytesPerRead: 3,
 	}
-	r, err := RequestFromReader(reader)
+	r, err = RequestFromReader(reader)
 	require.NoError(t, err)
 	require.NotNil(t, r)
-	assert.Equal(t, "application/json, text/html" r.Headers["accept"])
+	assert.Equal(t, "application/json, text/html", r.Headers["accept"])
 
 
 	// Test: Case-insensitive Header
-	reader := &chunkReader{
+	reader = &chunkReader{
 		data:            "GET / HTTP/1.1\r\nHoSt: localhost:42069\r\nUser-AGenT: curl/7.81.0\r\nAcCEpt: */*\r\n\r\n",
 		numBytesPerRead: 3,
 	}
-	r, err := RequestFromReader(reader)
+	r, err = RequestFromReader(reader)
 	require.NoError(t, err)
 	require.NotNil(t, r)
 	assert.Equal(t, "localhost:42069", r.Headers["host"])
@@ -141,11 +141,11 @@ func TestHeadersParse(t *testing.T) {
 	assert.Equal(t, "*/*", r.Headers["accept"])
 
 	// Test: Missing End of Headers
-	reader := &chunkReader{
+	reader = &chunkReader{
 		data:            "GET / HTTP/1.1\r\n",
 		numBytesPerRead: 3,
 	}
-	r, err := RequestFromReader(reader)
+	r, err = RequestFromReader(reader)
 	require.Error(t, err)
 
 	// Test: Malformed Header
