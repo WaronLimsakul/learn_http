@@ -4,22 +4,36 @@ import (
 	"net"
 	"fmt"
 	"log"
+	"io"
+	"bytes"
 	"sync/atomic"
 	"github.com/WaronLimsakul/learn_http/internal/response"
+	"github.com/WaronLimsakul/learn_http/internal/request"
 )
+
 
 
 // We don't need even a field to be public to be exported.
 type Server struct {
 	listener net.Listener
+	handler Handler
 	isClosed atomic.Bool // use this type because it is thread-safe + sync
+}
+
+// For Reporting error + write to body.
+// The writer here is just buffer. Not a real connection.
+type Handler func(w io.Writer, req request.Request) *HandlerError
+
+type HandlerError struct {
+	StatusCode response.StatusCode
+	Message string
 }
 
 func localHost(port int) string {
 	return fmt.Sprintf(":%d", port)
 }
 
-func Serve(port int) (*Server, error) {
+func Serve(port int, handler Handler) (*Server, error) {
 	// get a listener at the port they want
 	listener, err := net.Listen("tcp", localHost(port))
 	if err != nil {
@@ -28,6 +42,7 @@ func Serve(port int) (*Server, error) {
 
 	server := Server{
 		listener: listener,
+		handler: handler,
 		isClosed: atomic.Bool{}, // zero value is false
 	}
 
@@ -61,22 +76,50 @@ func (s *Server) listen() {
 		}
 
 		// after connecting with current request, handle it in background
-		go s.handle(conn)
+		go s.handle(conn, s.handler)
 	}
 }
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	err := response.WriteStatusLine(conn, 200)
+	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		log.Println("point 1: ", err)
+		writeError(conn, &HandlerError{ StatusCode: 400 })
 		return
 	}
-	h := response.GetDefaultHeaders(0)
+
+	// bytes.Buffer is a []byte but will be treated like a buffer.
+	// It has Read, Write, ETC. So easy to work with.
+	resBuff := bytes.Buffer{} // Buffer for handler to write as a reponse writer.
+
+	// MUST return pointer of buffer because .Write implemented by *Buffer, not Buffer
+	handlerError := s.handler(&resBuff, *req)
+	if handlerError != nil {
+		writeError(conn, handlerError)
+		return
+	}
+
+	headers := response.GetDefaultHeaders(resBuff.Len())
+	response.WriteStatusLine(conn, response.StatusOK)
+
+	response.WriteHeaders(conn, headers)
+
+	conn.Write(resBuff.Bytes())
+
+	return
+}
+
+// intend to write it back to the connection directly
+func writeError(conn io.Writer, hErr *HandlerError) error {
+	err := response.WriteStatusLine(conn, hErr.StatusCode)
+	if err != nil {
+		return err
+	}
+	h := response.GetDefaultHeaders(len(hErr.Message))
 	err = response.WriteHeaders(conn, h)
 	if err != nil {
-		log.Println("point 2: ", err)
-		return
+		return err
 	}
-	return
+	conn.Write([]byte(hErr.Message))
+	return nil
 }
