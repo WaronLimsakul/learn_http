@@ -34,6 +34,11 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	if !validFieldName(key) {
 		return 0, false, fmt.Errorf("invalid field-name: '%s'", key)
 	}
+	h.Set(key, val)
+	return crlfIdx + 2, false, nil
+}
+
+func (h Headers) Set(key, val string) {
 	key = strings.ToLower(key)
 
 	if _, ok := h[key]; ok {
@@ -41,8 +46,6 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	} else {
 		h[key] = val
 	}
-
-	return crlfIdx + 2, false, nil
 }
 
 // return trim value o
