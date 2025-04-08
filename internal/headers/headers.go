@@ -76,3 +76,8 @@ func validFieldName(s string) bool {
 	}
 	return  true
 }
+
+func (h Headers) Get(s string) (val string, found bool) {
+	val, found = h[strings.ToLower(s)]
+	return
+}

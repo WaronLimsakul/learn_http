@@ -5,6 +5,7 @@ import (
 	"io"
 	"fmt"
 	"strings"
+	"strconv"
 
 	"github.com/WaronLimsakul/learn_http/internal/headers"
 )
@@ -14,11 +15,13 @@ type requestState int
 const (
 	initialized requestState = iota
 	parsingHeaders
+	parsingBody
 	done
 )
 type Request struct {
 	RequestLine RequestLine
 	Headers headers.Headers
+	Body []byte
 	state requestState
 }
 
@@ -38,6 +41,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buffer := make([]byte, bufferSize)
 	req := Request {
 		Headers: headers.NewHeaders(),
+		Body: make([]byte, 0),
 		state: initialized,
 	}
 	readIdx := 0
@@ -110,8 +114,31 @@ func (r *Request) parseSingle(data []byte) (bytesParsed int, err error) {
 		var parsingDone bool
 		bytesParsed, parsingDone, err = r.Headers.Parse(data)
 		if parsingDone {
+			r.state = parsingBody
+		}
+	case parsingBody:
+		reportedLen, found := r.Headers.Get("Content-Length")
+		if !found {
+			r.state = done
+			return 0, nil
+		}
+		r.Body = append(r.Body, data...)
+		// I to A is "Int to ASCII".
+		contentLen, err := strconv.Atoi(reportedLen)
+		if err != nil {
+			return 0, fmt.Errorf("invalid content-lenght field: %s", reportedLen)
+		}
+		if len(r.Body) > contentLen {
+			return 0, fmt.Errorf(
+				"bad content-lenght: reported: %d | actual: %d",
+				contentLen, len(r.Body),
+			)
+		} else if len(r.Body) == contentLen {
 			r.state = done
 		}
+		// If body still less than reported length, then it's ok
+		// because we still not finish parsing
+		return len(data), nil
 	case done:
 		return 0, nil
 	default:
@@ -176,7 +203,7 @@ func requestLineFromString(s string) (*RequestLine, error) {
 		}, nil
 }
 
-func PrintRequest(r *Request) {
+func (r *Request) PrintRequest() {
 	if r == nil {
 		return
 	}
@@ -185,4 +212,8 @@ func PrintRequest(r *Request) {
 	fmt.Printf("- Method: %s\n", r.RequestLine.Method)
 	fmt.Printf("- Target: %s\n", r.RequestLine.RequestTarget)
 	fmt.Printf("- Version: %s\n", r.RequestLine.HttpVersion)
+	fmt.Println("Headers:")
+	for key, val := range r.Headers {
+		fmt.Printf("- %s: %v\n", key, val)
+	}
 }

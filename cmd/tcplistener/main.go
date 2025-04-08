@@ -26,6 +26,6 @@ func main() {
 		fmt.Printf("error: %v\n", err)
 		return
 	}
-	request.PrintRequest(req)
+	req.PrintRequest()
 	fmt.Println("connection closed")
 }
