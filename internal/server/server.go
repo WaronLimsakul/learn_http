@@ -3,9 +3,6 @@ package server
 import (
 	"net"
 	"fmt"
-	"log"
-	"io"
-	"bytes"
 	"sync/atomic"
 	"github.com/WaronLimsakul/learn_http/internal/response"
 	"github.com/WaronLimsakul/learn_http/internal/request"
@@ -20,9 +17,8 @@ type Server struct {
 	isClosed atomic.Bool // use this type because it is thread-safe + sync
 }
 
-// For Reporting error + write to body.
-// The writer here is just buffer. Not a real connection.
-type Handler func(w io.Writer, req request.Request) *HandlerError
+// We can write response inside handler.
+type Handler func(w *response.Writer, req *request.Request)
 
 type HandlerError struct {
 	StatusCode response.StatusCode
@@ -71,12 +67,11 @@ func (s *Server) listen() {
 			if s.isClosed.Load() {
 				return
 			}
-			log.Println("bad connection: ", err)
 			continue
 		}
 
 		// after connecting with current request, handle it in background
-		go s.handle(conn, s.handler)
+		go s.handle(conn)
 	}
 }
 
@@ -84,42 +79,35 @@ func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		writeError(conn, &HandlerError{ StatusCode: 400 })
+		resWriter := response.NewResponseWriter(conn)
+		msg := []byte("couldn't parse request")
+		resWriter.WriteStatusLine(400)
+		headers := response.GetDefaultHeaders(len(msg))
+		resWriter.WriteHeaders(headers)
+		resWriter.WriteBody(msg)
 		return
 	}
 
 	// bytes.Buffer is a []byte but will be treated like a buffer.
 	// It has Read, Write, ETC. So easy to work with.
-	resBuff := bytes.Buffer{} // Buffer for handler to write as a reponse writer.
+	// resBuff := bytes.Buffer{} // Buffer for handler to write as a reponse writer.
 
-	// MUST return pointer of buffer because .Write implemented by *Buffer, not Buffer
-	handlerError := s.handler(&resBuff, *req)
-	if handlerError != nil {
-		writeError(conn, handlerError)
-		return
-	}
+	resWriter := response.NewResponseWriter(conn)
 
-	headers := response.GetDefaultHeaders(resBuff.Len())
-	response.WriteStatusLine(conn, response.StatusOK)
-
-	response.WriteHeaders(conn, headers)
-
-	conn.Write(resBuff.Bytes())
-
-	return
+	s.handler(resWriter, req)
 }
 
 // intend to write it back to the connection directly
-func writeError(conn io.Writer, hErr *HandlerError) error {
-	err := response.WriteStatusLine(conn, hErr.StatusCode)
-	if err != nil {
-		return err
-	}
-	h := response.GetDefaultHeaders(len(hErr.Message))
-	err = response.WriteHeaders(conn, h)
-	if err != nil {
-		return err
-	}
-	conn.Write([]byte(hErr.Message))
-	return nil
-}
+// func writeError(conn io.Writer, hErr *HandlerError) error {
+// 	err := response.WriteStatusLine(conn, hErr.StatusCode)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	h := response.GetDefaultHeaders(len(hErr.Message))
+// 	err = response.WriteHeaders(conn, h)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	conn.Write([]byte(hErr.Message))
+// 	return nil
+// }

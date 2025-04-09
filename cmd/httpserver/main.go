@@ -3,12 +3,12 @@ package main
 import (
 	"log"
 	"os"
-	"io"
 	"syscall"
 	"os/signal"
 
 	"github.com/WaronLimsakul/learn_http/internal/server"
 	"github.com/WaronLimsakul/learn_http/internal/request"
+	"github.com/WaronLimsakul/learn_http/internal/response"
 )
 
 const port = 42069
@@ -31,20 +31,60 @@ func main() {
 	log.Println("Server stopped gracefully")
 }
 
-func defaultHandler(w io.Writer, req request.Request) *server.HandlerError {
+func defaultHandler(w *response.Writer, req *request.Request) {
 	switch req.RequestLine.RequestTarget {
 		case "/yourproblem":
-			return &server.HandlerError{
-				StatusCode: 400,
-				Message: "Your problem is not my problem\n",
-			}
+			w.WriteStatusLine(400)
+			msg := []byte(
+`<html>
+  <head>
+    <title>400 Bad Request</title>
+  </head>
+  <body>
+    <h1>Bad Request</h1>
+    <p>Your request honestly kinda sucked.</p>
+  </body>
+</html>
+`)
+			headers := response.GetDefaultHeaders(len(msg))
+			headers.Reset("Content-Type", "text/html")
+			w.WriteHeaders(headers)
+			w.WriteBody(msg)
+			return
 		case "/myproblem":
-			return &server.HandlerError{
-				StatusCode: 500,
-				Message: "Woopsie, my bad\n",
-			}
+			w.WriteStatusLine(500)
+			msg := []byte(
+`<html>
+  <head>
+    <title>500 Internal Server Error</title>
+  </head>
+  <body>
+    <h1>Internal Server Error</h1>
+    <p>Okay, you know what? This one is on me.</p>
+  </body>
+</html>
+`)
+			headers := response.GetDefaultHeaders(len(msg))
+			headers.Reset("Content-Type", "text/html")
+			w.WriteHeaders(headers)
+			w.WriteBody(msg)
+			return
 	}
 
-	w.Write([]byte("All good, frfr\n"))
-	return nil
+	w.WriteStatusLine(200)
+	msg := []byte(
+`<html>
+  <head>
+    <title>200 OK</title>
+  </head>
+  <body>
+    <h1>Success!</h1>
+    <p>Your request was an absolute banger.</p>
+  </body>
+</html>
+`)
+	headers := response.GetDefaultHeaders(len(msg))
+	headers.Reset("Content-Type", "text/html")
+	w.WriteHeaders(headers)
+	w.WriteBody(msg)
 }

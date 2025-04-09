@@ -48,6 +48,11 @@ func (h Headers) Set(key, val string) {
 	}
 }
 
+func (h Headers) Reset(key, val string) {
+	key = strings.ToLower(key)
+	h[key] = val
+}
+
 // return trim value o
 func getFieldLinePair(s string) (key, val string, err error) {
 	s  = strings.TrimSpace(s)
