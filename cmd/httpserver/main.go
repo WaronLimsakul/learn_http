@@ -21,7 +21,7 @@ import (
 const port = 42069
 
 func main() {
-	server, err := server.Serve(port, defaultHandler)
+	server, err := server.Serve(port, reqHandler)
 	if err != nil {
 		log.Fatalf("Error start serving: %v\n", err)
 	}
@@ -38,7 +38,7 @@ func main() {
 	log.Println("Server stopped gracefully")
 }
 
-func defaultHandler(w *response.Writer, req *request.Request) {
+func reqHandler(w *response.Writer, req *request.Request) {
 	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
 		proxyHandler(w, req)
 		return
@@ -50,6 +50,9 @@ func defaultHandler(w *response.Writer, req *request.Request) {
 			return
 		case "/myproblem":
 			handle500(w, req)
+			return
+		case "/video":
+			handleGetVideo(w, req)
 			return
 	}
 
@@ -169,4 +172,18 @@ func handle400(w *response.Writer, req *request.Request) {
 	headers.Reset("Content-Type", "text/html")
 	w.WriteHeaders(headers)
 	w.WriteBody(msg)
+}
+
+func  handleGetVideo(w *response.Writer, req *request.Request) {
+	w.WriteStatusLine(200)
+	video, err := os.ReadFile("./assets/vim.mp4")
+	if err != nil {
+		handle500(w, req)
+		return
+	}
+
+	headers := response.GetDefaultHeaders(len(video))
+	headers.Reset("Content-Type", "video/mp4")
+	w.WriteHeaders(headers)
+	w.WriteBody(video)
 }
