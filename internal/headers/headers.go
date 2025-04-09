@@ -89,3 +89,8 @@ func (h Headers) Get(s string) (val string, found bool) {
 	val, found = h[strings.ToLower(s)]
 	return
 }
+
+func (h Headers) Delete(key string) {
+	key = strings.ToLower(key)
+	delete(h, key)
+}

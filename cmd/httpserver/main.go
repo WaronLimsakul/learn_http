@@ -3,8 +3,15 @@ package main
 import (
 	"log"
 	"os"
-	"syscall"
+	"io"
 	"os/signal"
+	"net/http"
+	"syscall"
+	"strings"
+	"fmt"
+	"crypto/sha256"
+	"strconv"
+	"encoding/hex"
 
 	"github.com/WaronLimsakul/learn_http/internal/server"
 	"github.com/WaronLimsakul/learn_http/internal/request"
@@ -32,28 +39,103 @@ func main() {
 }
 
 func defaultHandler(w *response.Writer, req *request.Request) {
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin/") {
+		proxyHandler(w, req)
+		return
+	}
+
 	switch req.RequestLine.RequestTarget {
 		case "/yourproblem":
-			w.WriteStatusLine(400)
-			msg := []byte(
+			handle400(w, req)
+			return
+		case "/myproblem":
+			handle500(w, req)
+			return
+	}
+
+	handle200(w, req)
+
+}
+
+func proxyHandler(w *response.Writer, req *request.Request) {
+	httpbinTarget := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin")
+	urlTarget := "https://httpbin.org" + httpbinTarget
+
+
+	headers := response.GetDefaultHeaders(0)
+	binResp, err := http.Get(urlTarget)
+	if err != nil {
+		handle500(w, req)
+		return
+	}
+
+	headers.Set("Trailer", "X-Content-SHA256")
+	headers.Set("Trailer", "X-Content-Length")
+
+	defer binResp.Body.Close()
+	w.WriteStatusLine(200)
+	headers.Delete("Content-Length")
+	headers.Set("Transfer-Encoding", "chunked")
+	w.WriteHeaders(headers)
+
+	buffer := make([]byte, 1024)
+	fullBody := []byte{}
+	for  {
+		n, err := binResp.Body.Read(buffer)
+		fmt.Println("n: ", n)
+		if n > 0 {
+			_, err := w.WriteChunkedBody(buffer[:n]) // when .Read(), it fill from start to n-1 bytes
+			if err != nil {
+				fmt.Println("error writing chunked body:", err)
+				break
+			}
+			fullBody = append(fullBody, buffer[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println("error reading from response body:", err)
+			break
+		}
+	}
+	_, err = w.WriteChunkedBodyDone()
+	if err != nil {
+		fmt.Println("error writing last chunked body:", err)
+	}
+
+	hashedBody := sha256.Sum256(fullBody)
+	headers.Set("X-Content-SHA256", hex.EncodeToString(hashedBody[:]))
+	headers.Set("X-Content-Length", strconv.Itoa(len(fullBody)))
+
+	err = w.WriteTrailers(headers)
+	if err != nil {
+		fmt.Println("error writing trailers:", err)
+	}
+}
+
+func handle200(w *response.Writer, req *request.Request) {
+	w.WriteStatusLine(200)
+	msg := []byte(
 `<html>
   <head>
-    <title>400 Bad Request</title>
+    <title>200 OK</title>
   </head>
   <body>
-    <h1>Bad Request</h1>
-    <p>Your request honestly kinda sucked.</p>
+    <h1>Success!</h1>
+    <p>Your request was an absolute banger.</p>
   </body>
 </html>
 `)
-			headers := response.GetDefaultHeaders(len(msg))
-			headers.Reset("Content-Type", "text/html")
-			w.WriteHeaders(headers)
-			w.WriteBody(msg)
-			return
-		case "/myproblem":
-			w.WriteStatusLine(500)
-			msg := []byte(
+	headers := response.GetDefaultHeaders(len(msg))
+	headers.Reset("Content-Type", "text/html")
+	w.WriteHeaders(headers)
+	w.WriteBody(msg)
+}
+
+func handle500(w *response.Writer, req *request.Request) {
+	w.WriteStatusLine(500)
+	msg := []byte(
 `<html>
   <head>
     <title>500 Internal Server Error</title>
@@ -64,22 +146,22 @@ func defaultHandler(w *response.Writer, req *request.Request) {
   </body>
 </html>
 `)
-			headers := response.GetDefaultHeaders(len(msg))
-			headers.Reset("Content-Type", "text/html")
-			w.WriteHeaders(headers)
-			w.WriteBody(msg)
-			return
-	}
+	headers := response.GetDefaultHeaders(len(msg))
+	headers.Reset("Content-Type", "text/html")
+	w.WriteHeaders(headers)
+	w.WriteBody(msg)
+}
 
-	w.WriteStatusLine(200)
+func handle400(w *response.Writer, req *request.Request) {
+	w.WriteStatusLine(400)
 	msg := []byte(
 `<html>
   <head>
-    <title>200 OK</title>
+    <title>400 Bad Request</title>
   </head>
   <body>
-    <h1>Success!</h1>
-    <p>Your request was an absolute banger.</p>
+    <h1>Bad Request</h1>
+    <p>Your request honestly kinda sucked.</p>
   </body>
 </html>
 `)

@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"net"
 
 	"github.com/WaronLimsakul/learn_http/internal/headers"
@@ -21,6 +22,7 @@ const (
 	initialized writerState = iota
 	writingHeaders
 	writingBody
+	writingTrailers
 	done
 )
 
@@ -89,4 +91,51 @@ func (w *Writer) WriteBody(p []byte) (n int, err error) {
 	n, err = w.conn.Write(p)
 	w.state = done
 	return
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (n int, err error) {
+	if w.state != writingBody {
+		return 0, fmt.Errorf("invalid writer state: %d", w.state)
+	}
+	chunk := []byte{}
+	firstLine := []byte(fmt.Sprintf("%X", len(p)) + crlf)
+	chunk = append(chunk, firstLine...)
+	chunk = append(chunk, p...)
+	chunk = append(chunk, []byte(crlf)...)
+	n, err = w.conn.Write(chunk)
+	return
+}
+
+func (w *Writer) WriteChunkedBodyDone() (n int, err error) {
+	if w.state != writingBody {
+		return 0, fmt.Errorf("invalid writer state: %d", w.state)
+	}
+	n, err = w.conn.Write([]byte("0\r\n"))
+	w.state = writingTrailers
+	return
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.state != writingTrailers {
+		return fmt.Errorf("cannot writing in state: %v", w.state)
+	}
+	end := crlf
+	trailerField, ok := h.Get("Trailer")
+	// no trailer, can end with crlf right away
+	if !ok {
+		w.conn.Write([]byte(end))
+		return nil
+	}
+
+	trailer := ""
+	keys := strings.Split(trailerField, ", ")
+	for _, key := range keys {
+		val, ok := h.Get(key)
+		if !ok {
+			return fmt.Errorf("couldn't find key: %s in headers", key)
+		}
+		trailer += key + ":" + val + crlf
+	}
+	_, err := w.conn.Write([]byte(trailer + crlf))
+	return err
 }
